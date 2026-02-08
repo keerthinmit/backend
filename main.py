@@ -1,44 +1,49 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pymongo import MongoClient
+import os
 
+# Create FastAPI app
 app = FastAPI()
 
-# Allow frontend (index.html) to talk to backend
+# Enable CORS (so frontend can connect)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # allow all origins (safe for local dev)
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Sample data
-courses = [
-    {"title": "Python Basics", "difficulty": "Beginner", "prerequisite": None},
-    {"title": "SQL Fundamentals", "difficulty": "Beginner", "prerequisite": "Python Basics"},
-    {"title": "Machine Learning", "difficulty": "Intermediate", "prerequisite": "SQL Fundamentals"},
-]
-
-learners = [
-    {"id": 1, "name": "Keerthi", "skills": ["Python"], "goal": "Data Scientist"},
-    {"id": 2, "name": "Anita", "skills": ["Python", "SQL"], "goal": "AI Engineer"}
-]
+# Connect to MongoDB Atlas (we’ll add the URI later in Render)
+MONGO_URI = os.getenv("MONGO_URI")
+client = MongoClient(MONGO_URI)
+db = client["edu_database"]
+courses = db["courses"]
+students = db["students"]
 
 @app.get("/")
-def home():
+def root():
     return {"message": "Educational Agent is running!"}
 
-@app.get("/courses")
-def get_courses():
-    return {"courses": courses}
+@app.post("/add_course")
+def add_course(name: str, duration: int):
+    courses.insert_one({"name": name, "duration": duration})
+    return {"status": "Course added"}
 
-@app.get("/learners")
-def get_learners():
-    return {"learners": learners}
+@app.post("/add_student")
+def add_student(name: str, progress: int):
+    students.insert_one({"name": name, "progress": progress})
+    return {"status": "Student added"}
 
-@app.get("/skill-gap/{learner_id}")
-def skill_gap(learner_id: int):
-    learner = next(l for l in learners if l["id"] == learner_id)
-    target_skills = ["Python", "SQL", "Machine Learning", "Deep Learning"]
-    missing = [skill for skill in target_skills if skill not in learner["skills"]]
-    return {"learner": learner["name"], "missing_skills": missing}
+@app.get("/recommend/{student_name}")
+def recommend(student_name: str):
+    student = students.find_one({"name": student_name})
+    if not student:
+        return {"error": "Student not found"}
+    # Simple recommender: suggest shortest course if progress < 50
+    if student["progress"] < 50:
+        course = courses.find_one(sort=[("duration", 1)])
+        return {"recommendation": f"Take {course['name']} next"}
+    else:
+        return {"recommendation": "Continue advanced courses"}
